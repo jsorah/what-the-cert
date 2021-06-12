@@ -17,7 +17,7 @@ class WhatTheCertOptions {
 public:
     std::string target;
     std::string s_port;
-    std::string sni;
+    std::string sni_value;
     bool show_san = false;
     bool no_sni = false;
     bool peer_only = false;
@@ -33,8 +33,8 @@ public:
                 ("help", "produce help message")
                 ("target", po::value<std::string>(&target)->required(), "target host")
                 ("port", po::value<std::string>(&s_port)->default_value("443"), "port (default 443)")
-                ("sni", po::value<std::string>(&sni), "sni value")
-                ("no-sni", po::bool_switch(&no_sni), "whether to use SNI at all")
+                ("sni_value", po::value<std::string>(&sni_value), "sni_value value")
+                ("no-sni_value", po::bool_switch(&no_sni), "whether to use SNI at all")
                 ("show-sans", po::bool_switch(&show_san), "Whether to show sans in the output")
                 ("peer-only", po::bool_switch(&peer_only)->default_value(false), "If only the peer certificate should be printed")
                 ;
@@ -48,8 +48,8 @@ public:
             return false;
         }
 
-        if (!vm.count("sni") && !no_sni) {
-            sni = target;
+        if (!vm.count("sni_value") && !no_sni) {
+            sni_value = target;
         }
 
         return true;
@@ -200,7 +200,8 @@ class TLSConnection {
 public:
     std::string host;
     std::string port;
-    std::string sni;
+    std::string sni_value;
+    bool sni_enabled;
 
     Handshake connect() {
 
@@ -217,8 +218,8 @@ public:
 
         BIO_set_conn_hostname(bio, (host + ":" + port).c_str());
 
-        if (sni.length() > 0) {
-            SSL_set_tlsext_host_name(ssl, sni.c_str());
+        if (sni_value.length() > 0 && sni_enabled) {
+            SSL_set_tlsext_host_name(ssl, sni_value.c_str());
         } else {
             SSL_set_tlsext_host_name(ssl, nullptr);
         }
@@ -273,7 +274,7 @@ int main(int argc, char **argv) {
     if (opts.no_sni) {
         std::cout << " without SNI";
     } else {
-        std::cout << " with SNI value of " << opts.sni;
+        std::cout << " with SNI value of " << opts.sni_value;
     }
 
     std::cout << std::endl;
@@ -281,7 +282,8 @@ int main(int argc, char **argv) {
     TLSConnection connection;
     connection.host = opts.target;
     connection.port = opts.s_port;
-    connection.sni = opts.sni;
+    connection.sni_value = opts.sni_value;
+    connection.sni_enabled = !opts.no_sni;
 
     Handshake handshake = connection.connect();
 
