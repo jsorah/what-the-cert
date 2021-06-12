@@ -10,63 +10,74 @@
 #include <iostream>
 
 namespace po = boost::program_options;
-
-int main(int argc, char **argv) {
-
+class WhatTheCertOptions {
+public:
     std::string target;
     std::string s_port;
     std::string sni;
     bool show_san = false;
     bool no_sni = false;
 
-    po::options_description desc("Allowed options");
-    desc.add_options()
-            ("help", "produce help message")
-            ("target", po::value<std::string>(&target), "target host")
-            ("port", po::value<std::string>(&s_port)->default_value("443"), "port (default 443)")
-            ("sni", po::value<std::string>(&sni), "sni value")
-            ("no-sni", po::bool_switch(&no_sni), "whether to use SNI at all")
-            ("show-sans", po::bool_switch(&show_san), "Whether to show sans in the output");
-
-
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
-
-    if (vm.count("help")) {
-        std::cout << desc << std::endl;
-        return -1;
+    std::string host_and_port() const {
+        return target + ":" + s_port;
     }
 
-    if (!vm.count("target")) {
-        std::cout << desc << std::endl;
-        return -1;
+    bool parse_args(int argc, char **argv) {
+
+        po::options_description desc("Allowed options");
+        desc.add_options()
+                ("help", "produce help message")
+                ("target", po::value<std::string>(&target)->required(), "target host")
+                ("port", po::value<std::string>(&s_port)->default_value("443"), "port (default 443)")
+                ("sni", po::value<std::string>(&sni), "sni value")
+                ("no-sni", po::bool_switch(&no_sni), "whether to use SNI at all")
+                ("show-sans", po::bool_switch(&show_san), "Whether to show sans in the output");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help")) {
+            std::cout << desc << std::endl;
+            return false;
+        }
+
+        if (!vm.count("sni")) {
+            sni = target;
+        }
+
+        return true;
     }
+};
 
-    if (!vm.count("sni")) {
-        sni = target;
-    }
-
-    std::string s = target;
-
+void init_ssl() {
     SSL_load_error_strings();
     ERR_load_BIO_strings();
     OpenSSL_add_all_algorithms();
+}
 
-    BIO *bio;
+int main(int argc, char **argv) {
 
-    std::cout << "Connecting to " << (s + ":" + s_port);
+    WhatTheCertOptions opts;
+    if (!opts.parse_args(argc, argv)) {
+        return -1;
+    }
 
-    if (no_sni) {
+    std::cout << "Connecting to " << (opts.host_and_port());
+    if (opts.no_sni) {
         std::cout << " without SNI";
     } else {
-        std::cout << " with SNI value of " << sni;
+        std::cout << " with SNI value of " << opts.sni;
     }
 
     std::cout << std::endl;
 
+    init_ssl();
+
     SSL_CTX *ctx = SSL_CTX_new(TLS_method());
+
     SSL *ssl;
+    BIO *bio;
 
     bio = BIO_new_ssl_connect(ctx);
 
@@ -74,16 +85,16 @@ int main(int argc, char **argv) {
 
     SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
 
-    BIO_set_conn_hostname(bio, (target + ":" + s_port).c_str());
+    BIO_set_conn_hostname(bio, (opts.host_and_port()).c_str());
 
-    if (!no_sni) {
-        SSL_set_tlsext_host_name(ssl, sni.c_str());
+    if (!opts.no_sni) {
+        SSL_set_tlsext_host_name(ssl, opts.sni.c_str());
     } else {
         SSL_set_tlsext_host_name(ssl, nullptr);
     }
 
     if (BIO_do_connect(bio) <= 0) {
-        std::cout << "WARNING: Unable to connect to " << (s + ":" + s_port) << std::endl;
+        std::cout << "WARNING: Unable to connect to " << (opts.target + ":" + opts.s_port) << std::endl;
         // TODO dump error message to stderr
     }
 
@@ -118,7 +129,8 @@ int main(int argc, char **argv) {
             struct tm stm2;
             ASN1_STRING *af = X509_getm_notAfter(current_cert);
             ASN1_TIME_to_tm(af, &stm2);
-            std::cout << "Not after:\t" << 20 << stm2.tm_year % 100 << "-" << (stm2.tm_mon + 1) << "-" << stm2.tm_mday
+            std::cout << "Not after:\t" << 20 << stm2.tm_year % 100
+                      << "-" << (stm2.tm_mon + 1) << "-" << stm2.tm_mday
                       << " " << stm2.tm_hour << ":" << stm2.tm_min << ":" << stm2.tm_sec
                       << std::endl;
 
@@ -167,7 +179,7 @@ int main(int argc, char **argv) {
 
         if (general_name_count > 0) {
 
-            if (show_san) {
+            if (opts.show_san) {
                 std::cout << std::endl;
                 std::cout << "Subject Alternative Names" << std::endl;
                 std::cout << "-----------------" << std::endl;
@@ -184,7 +196,6 @@ int main(int argc, char **argv) {
     } else {
         std::cout << "No Peer Certificate" << std::endl;
     }
-
 
     BIO_free_all(bio);
     SSL_CTX_free(ctx);
