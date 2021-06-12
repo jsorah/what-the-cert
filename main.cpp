@@ -1,6 +1,7 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>
 
 #include <boost/program_options.hpp>
 
@@ -47,9 +48,8 @@ int main(int argc, char ** argv) {
     SSL* ssl;
 
     bio = BIO_new_ssl_connect(ctx);
-    std::cout << "After BIO_new_ssl_connect" << std::endl;
+
     BIO_get_ssl(bio, &ssl);
-    std::cout << "After BIO_get_ssl" << std::endl;
 
     SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
 
@@ -57,48 +57,63 @@ int main(int argc, char ** argv) {
 
     SSL_set_tlsext_host_name(ssl, s.c_str());
 
-    std::cout << "Here I am?" << std::endl;
-
     if (BIO_do_connect(bio) <= 0) {
         std::cout << "Unable to connect to " << s << std::endl;
         return -1;
     }
 
-    X509 *cert = SSL_get_peer_certificate(ssl);
-    if (cert == NULL) {
-        std::cout << "No cert?" << std::endl;
+    STACK_OF(X509) * chain_certs = SSL_get_peer_cert_chain(ssl);
+
+
+    for (int i = sk_X509_num(chain_certs) - 1; i >= 0; i--) {
+
+        X509 * current_cert = NULL;
+        current_cert = sk_X509_value(chain_certs, i);
+        std::cout << "CHAIN " << i << std::endl;
+        std::cout << "----------------" << std::endl;
+        std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) << std::endl;
+        std::cout << "Subject: \t" << X509_NAME_oneline(X509_get_subject_name(current_cert), NULL, 0) << std::endl;
+        std::cout << "SERIAL: \t" << X509_get_serialNumber(current_cert) << std::endl;
+        std::cout << std::endl;
     }
-    std::cout << (cert == NULL) << std::endl;
 
-    std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0) << std::endl;
-    std::cout << "SUBJECT: \t" << X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0) << std::endl;
+    std::cout << std::endl;
+    std::cout << "PEER CERT" << std::endl;
+    std::cout << "-----------------" << std::endl;
+    X509 *peer_cert = SSL_get_peer_certificate(ssl);
+    if (peer_cert == NULL) {
+        std::cout << "No peer_cert?" << std::endl;
+    }
 
-    int count = X509_get_ext_count(cert);
+    std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(peer_cert), NULL, 0) << std::endl;
+    std::cout << "SUBJECT: \t" << X509_NAME_oneline(X509_get_subject_name(peer_cert), NULL, 0) << std::endl;
+    std::cout << "SERIAL: \t" << X509_get_serialNumber(peer_cert) << std::endl;
+
+    int count = X509_get_ext_count(peer_cert);
     std::cout << "Extension Count: " << count << std::endl;
 
-    STACK_OF(GENERAL_NAME) *san_names = NULL;
 
-//    san_names = static_cast<struct stack_st_GENERAL_NAME *>(X509_get_ext_d2i(cert, NID_subject_alt_name, NULL, NULL));
+    GENERAL_NAMES *gs;
+    gs = static_cast<GENERAL_NAMES *>(X509_get_ext_d2i(peer_cert, NID_subject_alt_name, NULL, NULL));
 
-//    int san_names_nb = san_names;
+    int general_name_count = sk_GENERAL_NAME_num(gs);
 
-//    for (i =0; i<san_names_nb; i++)
-    //std::cout << "Extension 1: \t" << X509_EXTENSION_get_data(X509v3_get_ext(X509_get0_extensions(cert),0)) << std::endl;
+    if (general_name_count > 0) {
 
-    for (int i = 0; i < count; i++) {
-        X509_EXTENSION *ext = X509_get_ext(cert, i);
-        int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
-//        X509
-//        std::cout << nid << std::endl;
+        std::cout << std::endl;
+        std::cout << "Subject Alternative Names" << std::endl;
+        std::cout << "-----------------" << std::endl;
 
+        for (int i = 0; i < sk_GENERAL_NAME_num(gs); i++) {
+            std::cout << (sk_GENERAL_NAME_value(gs, i)->d.dNSName)->data << std::endl;
+        }
+    } else {
+        std::cout << "No Subject Alternative Names" << std::endl;
     }
-    std::cout << "SERIAL: \t" << X509_get_serialNumber(cert) << std::endl;
+
 
     BIO_free_all(bio);
     SSL_CTX_free(ctx);
-
-
-
 
     return 0;
 }
