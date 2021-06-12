@@ -14,6 +14,7 @@ namespace po = boost::program_options;
 int main(int argc, char ** argv) {
 
     std::string target;
+    std::string s_port;
     std::string sni;
     bool show_san = false;
     bool no_sni = false;
@@ -22,6 +23,7 @@ int main(int argc, char ** argv) {
     desc.add_options()
         ("help", "produce help message")
         ("target", po::value<std::string>(&target),"target host")
+            ("port", po::value<std::string>(&s_port)->default_value("443"), "port (default 443)")
             ("sni", po::value<std::string>(&sni),"sni value")
             ("no-sni", po::bool_switch(&no_sni), "whether to use SNI at all")
             ("show-sans", po::bool_switch(&show_san), "Whether to show sans in the output")
@@ -55,7 +57,7 @@ int main(int argc, char ** argv) {
 
     BIO * bio;
 
-    std::cout << "Connecting to " << s;
+    std::cout << "Connecting to " << (s+":"+s_port);
 
     if (no_sni) {
         std::cout << " without SNI";
@@ -74,14 +76,14 @@ int main(int argc, char ** argv) {
 
     SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
 
-    BIO_set_conn_hostname(bio, target.c_str());
+    BIO_set_conn_hostname(bio, (target + ":" + s_port).c_str());
 
     if (!no_sni) {
         SSL_set_tlsext_host_name(ssl, sni.c_str());
     }
 
     if (BIO_do_connect(bio) <= 0) {
-        std::cout << "Unable to connect to " << s << std::endl;
+        std::cout << "Unable to connect to " << (s+":"+s_port) << std::endl;
         return -1;
     }
 
