@@ -12,11 +12,13 @@ namespace po = boost::program_options;
 int main(int argc, char ** argv) {
 
     std::string target;
+    std::string sni;
 
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
         ("target", po::value<std::string>(&target),"target host")
+            ("sni", po::value<std::string>(&sni),"sni value")
         ;
 
 
@@ -32,6 +34,10 @@ int main(int argc, char ** argv) {
     if (!vm.count("target")) {
         std::cout << desc << std::endl;
         return -1;
+    }
+
+    if (!vm.count("sni")) {
+        sni = target;
     }
 
     std::string s = target;
@@ -53,9 +59,9 @@ int main(int argc, char ** argv) {
 
     SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
 
-    BIO_set_conn_hostname(bio, s.c_str());
+    BIO_set_conn_hostname(bio, target.c_str());
 
-    SSL_set_tlsext_host_name(ssl, s.c_str());
+    SSL_set_tlsext_host_name(ssl, sni.c_str());
 
     if (BIO_do_connect(bio) <= 0) {
         std::cout << "Unable to connect to " << s << std::endl;
