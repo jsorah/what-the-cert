@@ -148,7 +148,10 @@ int main(int argc, char ** argv) {
 
     std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(peer_cert), nullptr, 0) << std::endl;
     std::cout << "SUBJECT: \t" << X509_NAME_oneline(X509_get_subject_name(peer_cert), nullptr, 0) << std::endl;
-    std::cout << "SERIAL: \t" << X509_get_serialNumber(peer_cert) << std::endl;
+
+    // TODO lots of cleanup
+    ASN1_INTEGER *serialNumber = X509_get_serialNumber(peer_cert);
+    std::cout << "SERIAL: \t" << BN_bn2hex(ASN1_INTEGER_to_BN(serialNumber, nullptr)) << std::endl;
     std::cout << "Not before\t" << X509_get0_notBefore(peer_cert)->data << std::endl;
     std::cout << "Not after\t" << X509_get0_notAfter(peer_cert)->data << std::endl;
 
