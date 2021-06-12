@@ -2,6 +2,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+#include <openssl/asn1.h>
+#include <openssl/asn1t.h>
 
 #include <boost/program_options.hpp>
 
@@ -13,12 +15,17 @@ int main(int argc, char ** argv) {
 
     std::string target;
     std::string sni;
+    bool show_san = false;
+    bool no_sni = false;
 
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
         ("target", po::value<std::string>(&target),"target host")
             ("sni", po::value<std::string>(&sni),"sni value")
+            ("no-sni", po::bool_switch(&no_sni), "whether to use SNI at all")
+            ("show-sans", po::bool_switch(&show_san), "Whether to show sans in the output")
+
         ;
 
 
@@ -48,7 +55,15 @@ int main(int argc, char ** argv) {
 
     BIO * bio;
 
-    std::cout << "Connecting to " << s << std::endl;
+    std::cout << "Connecting to " << s;
+
+    if (no_sni) {
+        std::cout << " without SNI";
+    } else {
+        std::cout << " with SNI value of " << sni;
+    }
+
+    std::cout << std::endl;
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_method());
     SSL* ssl;
@@ -61,7 +76,9 @@ int main(int argc, char ** argv) {
 
     BIO_set_conn_hostname(bio, target.c_str());
 
-    SSL_set_tlsext_host_name(ssl, sni.c_str());
+    if (!no_sni) {
+        SSL_set_tlsext_host_name(ssl, sni.c_str());
+    }
 
     if (BIO_do_connect(bio) <= 0) {
         std::cout << "Unable to connect to " << s << std::endl;
@@ -70,16 +87,52 @@ int main(int argc, char ** argv) {
 
     STACK_OF(X509) * chain_certs = SSL_get_peer_cert_chain(ssl);
 
-
     for (int i = sk_X509_num(chain_certs) - 1; i >= 0; i--) {
 
-        X509 * current_cert = NULL;
-        current_cert = sk_X509_value(chain_certs, i);
+        X509 *current_cert = sk_X509_value(chain_certs, i);
         std::cout << "CHAIN " << i << std::endl;
         std::cout << "----------------" << std::endl;
-        std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(current_cert), NULL, 0) << std::endl;
-        std::cout << "Subject: \t" << X509_NAME_oneline(X509_get_subject_name(current_cert), NULL, 0) << std::endl;
-        std::cout << "SERIAL: \t" << X509_get_serialNumber(current_cert) << std::endl;
+        std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(current_cert), nullptr, 0) << std::endl;
+        std::cout << "Subject: \t" << X509_NAME_oneline(X509_get_subject_name(current_cert), nullptr, 0) << std::endl;
+
+        // TODO lots of cleanup
+        ASN1_INTEGER *serialNumber = X509_get_serialNumber(current_cert);
+
+        std::cout << "SERIAL: \t" << BN_bn2hex(ASN1_INTEGER_to_BN(serialNumber, nullptr)) << std::endl;
+        std::cout << "Not before\t" << X509_get0_notBefore(current_cert)->data << std::endl;
+        std::cout << "Not after\t" << X509_get0_notAfter(current_cert)->data << std::endl;
+//        std::cout << std::endl;
+
+        struct tm stm;
+        ASN1_STRING *as = X509_getm_notBefore(current_cert);
+        ASN1_TIME_to_tm(as, &stm);
+        std::cout << "Not before:\t" << 20 << stm.tm_year % 100
+                  << "-" << (stm.tm_mon + 1) << "-" << stm.tm_mday
+                  << " " << stm.tm_hour << ":" << stm.tm_min << ":" << stm.tm_sec
+                  << std::endl;
+
+        struct tm stm2;
+        ASN1_STRING *af = X509_getm_notAfter(current_cert);
+        ASN1_TIME_to_tm(af, &stm2);
+        std::cout << "Not after:\t" << 20 << stm2.tm_year % 100 << "-" << (stm2.tm_mon + 1) << "-" << stm2.tm_mday
+                  << " " << stm2.tm_hour << ":" << stm2.tm_min << ":" << stm2.tm_sec
+                  << std::endl;
+
+        int day, sec;
+        ASN1_TIME_diff(&day, &sec, nullptr, X509_get0_notAfter(current_cert));
+
+        std::cout << "Expires in " << day << "d " << sec << "s" << std::endl;
+
+        if (day < 1) {
+            std::cout << "STOP WHAT YOU ARE DOING AND RENEW THIS CERT" << std::endl;
+        } else if (day < 10) {
+            std::cout <<"Renew VERY SOON" <<std::endl;
+        } else if (day < 30) {
+            std::cout << "Renew SOON" << std::endl;
+        } else if (day < 60) {
+            std::cout << "Renew soon" <<std::endl;
+        }
+
         std::cout << std::endl;
     }
 
@@ -87,34 +140,37 @@ int main(int argc, char ** argv) {
     std::cout << "PEER CERT" << std::endl;
     std::cout << "-----------------" << std::endl;
     X509 *peer_cert = SSL_get_peer_certificate(ssl);
-    if (peer_cert == NULL) {
+    if (peer_cert == nullptr) {
         std::cout << "No peer_cert?" << std::endl;
     }
 
-    std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(peer_cert), NULL, 0) << std::endl;
-    std::cout << "SUBJECT: \t" << X509_NAME_oneline(X509_get_subject_name(peer_cert), NULL, 0) << std::endl;
+    std::cout << "ISSUER: \t" << X509_NAME_oneline(X509_get_issuer_name(peer_cert), nullptr, 0) << std::endl;
+    std::cout << "SUBJECT: \t" << X509_NAME_oneline(X509_get_subject_name(peer_cert), nullptr, 0) << std::endl;
     std::cout << "SERIAL: \t" << X509_get_serialNumber(peer_cert) << std::endl;
+    std::cout << "Not before\t" << X509_get0_notBefore(peer_cert)->data << std::endl;
+    std::cout << "Not after\t" << X509_get0_notAfter(peer_cert)->data << std::endl;
 
     int count = X509_get_ext_count(peer_cert);
     std::cout << "Extension Count: " << count << std::endl;
 
+    if (show_san) {
+        GENERAL_NAMES *gs;
+        gs = static_cast<GENERAL_NAMES *>(X509_get_ext_d2i(peer_cert, NID_subject_alt_name, nullptr, nullptr));
 
-    GENERAL_NAMES *gs;
-    gs = static_cast<GENERAL_NAMES *>(X509_get_ext_d2i(peer_cert, NID_subject_alt_name, NULL, NULL));
+        int general_name_count = sk_GENERAL_NAME_num(gs);
 
-    int general_name_count = sk_GENERAL_NAME_num(gs);
+        if (general_name_count > 0) {
 
-    if (general_name_count > 0) {
+            std::cout << std::endl;
+            std::cout << "Subject Alternative Names" << std::endl;
+            std::cout << "-----------------" << std::endl;
 
-        std::cout << std::endl;
-        std::cout << "Subject Alternative Names" << std::endl;
-        std::cout << "-----------------" << std::endl;
-
-        for (int i = 0; i < sk_GENERAL_NAME_num(gs); i++) {
-            std::cout << (sk_GENERAL_NAME_value(gs, i)->d.dNSName)->data << std::endl;
+            for (int i = 0; i < sk_GENERAL_NAME_num(gs); i++) {
+                std::cout << (sk_GENERAL_NAME_value(gs, i)->d.dNSName)->data << std::endl;
+            }
+        } else {
+            std::cout << "No Subject Alternative Names" << std::endl;
         }
-    } else {
-        std::cout << "No Subject Alternative Names" << std::endl;
     }
 
 
