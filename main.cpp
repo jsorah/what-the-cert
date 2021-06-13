@@ -84,6 +84,16 @@ public:
     std::string cipher;
 
     void parse(SSL* ssl) {
+        // TODO can you get what was negotiated?
+        if(ssl == nullptr) {
+            return;
+        }
+
+        const SSL_CIPHER * cipher = SSL_get_current_cipher(ssl);
+
+        if (cipher != nullptr) {
+            std::cout << "Negotiated Cipher: " << SSL_CIPHER_description(cipher, nullptr, 0) << std::endl;
+        }
         parse_peer_cert_chain(ssl);
         parse_peer_cert(ssl);
     }
@@ -136,7 +146,7 @@ public:
 
         std::stringstream expires_in_ss;
 
-        expires_in_ss << "Expires in " << day << "d " << sec << "s" << std::endl;
+        expires_in_ss << day << "d " << sec / 3600 << "h " << (sec % 3600) / 60 << "m " << ((sec % 3600) % 60) << "s" << std::endl;
 
         return_cert.expires_in = expires_in_ss.str();
 
@@ -174,29 +184,24 @@ public:
     void parse_peer_cert_chain(SSL* ssl) {
         STACK_OF(X509) *chain_certs = SSL_get_peer_cert_chain(ssl);
 
-        if(chain_certs != nullptr) {
+        if (chain_certs == nullptr) return;
 
-            for (int i = sk_X509_num(chain_certs) - 1; i >= 0; i--) {
+        for (int i = sk_X509_num(chain_certs) - 1; i >= 0; i--) {
 
-                X509 *current_cert = sk_X509_value(chain_certs, i);
-                x509 cert_data = parse_cert(current_cert);
+            X509 *current_cert = sk_X509_value(chain_certs, i);
+            x509 cert_data = parse_cert(current_cert);
 
-                chain.push_back(cert_data);
-            }
+            chain.push_back(cert_data);
         }
     }
 
     void parse_peer_cert(SSL *ssl) {
         X509 *peer_cert = SSL_get_peer_certificate(ssl);
-
-        peer = parse_cert(peer_cert);
+        if (peer_cert != nullptr) {
+            peer = parse_cert(peer_cert);
+        }
     }
 };
-
-
-
-
-
 
 class TLSConnection {
 public:
@@ -234,8 +239,11 @@ public:
         Handshake handshake;
         handshake.parse(ssl);
 
-        BIO_free_all(bio);
-        SSL_CTX_free(ctx);
+        if (bio != nullptr)
+            BIO_free_all(bio);
+
+        if (ctx != nullptr)
+            SSL_CTX_free(ctx);
 
         return handshake;
 
