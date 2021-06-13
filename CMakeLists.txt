@@ -3,7 +3,7 @@ project(what_the_cert)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_executable(what_the_cert main.cpp)
+add_executable(what_the_cert main.cpp TLSConnection.cpp TLSConnection.h Handshake.cpp Handshake.h X509.h)
 
 find_package(OpenSSL REQUIRED)
 find_package(Boost COMPONENTS program_options REQUIRED)
