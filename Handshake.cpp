@@ -17,8 +17,10 @@ void Handshake::parse(SSL* ssl) {
 
     if (ssl_cipher != nullptr) {
         std::stringstream ss;
-        ss << SSL_CIPHER_description(ssl_cipher, nullptr, 0);
+        char * ssl_cipher_text = SSL_CIPHER_description(ssl_cipher, nullptr, 0);
+        ss << ssl_cipher_text;
         cipher = ss.str();
+        OPENSSL_free(ssl_cipher_text);
     }
     parse_peer_cert_chain(ssl);
     parse_peer_cert(ssl);
@@ -27,13 +29,22 @@ void Handshake::parse(SSL* ssl) {
 x509 Handshake::parse_cert(X509 *cert) {
     x509 return_cert;
 
-    return_cert.issuer = std::string(X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0));
-    return_cert.subject = std::string(X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0));
+    char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+    return_cert.issuer = std::string(issuer);
+    OPENSSL_free(issuer);
+
+    char * subjectName = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+    return_cert.subject = std::string(subjectName);
+    OPENSSL_free(subjectName);
 
     // TODO cleanup ptr?
     ASN1_INTEGER *serialNumber = X509_get_serialNumber(cert);
+    bignum_st* bn_serialNumber = ASN1_INTEGER_to_BN(serialNumber, nullptr);
+    char * c_serial = BN_bn2hex(bn_serialNumber);
+    return_cert.serial = std::string(c_serial);
+    OPENSSL_free(c_serial);
+    BN_free(bn_serialNumber);
 
-    return_cert.serial = std::string(BN_bn2hex(ASN1_INTEGER_to_BN(serialNumber, nullptr)));
 
     // TODO lots of cleanup
     std::stringstream ss;
@@ -104,6 +115,8 @@ x509 Handshake::parse_cert(X509 *cert) {
         }
 
     }
+
+    GENERAL_NAMES_free(gs);
 
     return return_cert;
 }

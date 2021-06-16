@@ -40,11 +40,13 @@ Handshake TLSConnection::connect() {
     Handshake handshake;
     handshake.parse(ssl);
 
-    if (bio != nullptr)
+    if (bio != nullptr) {
         BIO_free_all(bio);
+    }
 
-    if (ctx != nullptr)
+    if (ctx != nullptr) {
         SSL_CTX_free(ctx);
+    }
 
     return handshake;
 
