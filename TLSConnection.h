@@ -18,7 +18,7 @@ public:
 
     Handshake connect();
 private:
-    void init_ssl();
+    static void init_ssl();
 
 };
 

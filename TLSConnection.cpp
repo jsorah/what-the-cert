@@ -5,10 +5,7 @@
 #include "TLSConnection.h"
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
-#include <openssl/err.h>
 #include <openssl/x509v3.h>
-#include <openssl/asn1.h>
-#include <openssl/asn1t.h>
 #include <iostream>
 
 Handshake TLSConnection::connect() {
@@ -35,6 +32,8 @@ Handshake TLSConnection::connect() {
     if (BIO_do_connect(bio) <= 0) {
         std::cout << "WARNING: Unable to connect to " << (host + ":" + port) << std::endl;
         // TODO dump error message to stderr
+    } else if (BIO_do_handshake(bio) <= 0) {
+        std::cout << "WARNING: Unable to handshake with " << (host + ":" + port) << std::endl;
     }
 
     Handshake handshake;
